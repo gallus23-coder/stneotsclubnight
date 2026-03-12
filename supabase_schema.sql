@@ -24,6 +24,7 @@ alter table players add column if not exists total_points int default 0;
 alter table players add column if not exists wins int default 0;
 alter table players add column if not exists losses int default 0;
 alter table players add column if not exists photo_url text;
+alter table players add column if not exists is_deleted boolean default false;
 
 -- ============================================================
 -- RPC function — atomic increment of player stats
