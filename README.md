@@ -1,2 +1,2 @@
 # stneotsclubnight
-BAdminton Match Scheduler
+Badminton Match Scheduler
