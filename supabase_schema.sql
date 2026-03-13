@@ -1,106 +1,155 @@
 -- ============================================================
--- Club Night — Supabase Schema
--- Run this in your Supabase project SQL editor
+--  Club Night — Supabase SQL Schema
+--  Run this in the Supabase SQL Editor (Project → SQL Editor)
+--  Safe to run on a fresh project; use the ALTER TABLE at the
+--  bottom if upgrading an existing database.
 -- ============================================================
 
--- Players
-create table if not exists players (
-  id bigint primary key generated always as identity,
-  name text not null,
-  handle text unique not null,
-  color text not null,
-  total_points int default 0,
-  wins int default 0,
-  losses int default 0,
-  photo_url text,
-  created_at timestamptz default now()
+
+-- ── 1. players ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS players (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name          TEXT        NOT NULL,
+  handle        TEXT        NOT NULL,
+  color         TEXT        NOT NULL DEFAULT '#f0c430',
+  photo_url     TEXT,
+  total_points  INTEGER     NOT NULL DEFAULT 0,
+  wins          INTEGER     NOT NULL DEFAULT 0,
+  losses        INTEGER     NOT NULL DEFAULT 0,
+  is_deleted    BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ============================================================
--- ⚠️  MIGRATION — run these if upgrading an existing database
---    (safe to run even if columns already exist)
--- ============================================================
-alter table players add column if not exists total_points int default 0;
-alter table players add column if not exists wins int default 0;
-alter table players add column if not exists losses int default 0;
-alter table players add column if not exists photo_url text;
-alter table players add column if not exists is_deleted boolean default false;
 
--- ============================================================
--- RPC function — atomic increment of player stats
--- Prevents race conditions when multiple games finish at once
--- ============================================================
-create or replace function increment_player_stats(
-  p_id     bigint,
-  p_points int,
-  p_wins   int,
-  p_losses int default 0
+-- ── 2. courts ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS courts (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name        TEXT    NOT NULL DEFAULT 'Court 1',
+  max_players INTEGER NOT NULL DEFAULT 4,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- ── 3. court_players ─────────────────────────────────────────
+--  Tracks which players are currently on which court.
+--  Rows are deleted when a game finishes or a player is moved.
+CREATE TABLE IF NOT EXISTS court_players (
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  court_id   BIGINT NOT NULL REFERENCES courts(id)  ON DELETE CASCADE,
+  player_id  BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  UNIQUE (court_id, player_id)
+);
+
+
+-- ── 4. waiting_list ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS waiting_list (
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  player_id  BIGINT      NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  joined_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (player_id)   -- a player can only be in the queue once
+);
+
+
+-- ── 5. score_history ─────────────────────────────────────────
+--  One row per score recorded on a court (mid-game or final).
+CREATE TABLE IF NOT EXISTS score_history (
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  court_id     BIGINT  NOT NULL REFERENCES courts(id) ON DELETE CASCADE,
+  team1_label  TEXT    NOT NULL,
+  team2_label  TEXT    NOT NULL,
+  score1       INTEGER NOT NULL DEFAULT 0,
+  score2       INTEGER NOT NULL DEFAULT 0,
+  recorded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- ── 6. player_game_history ───────────────────────────────────
+--  One row per player per finished game.
+--  opponent_player_ids stores the IDs of every player on the
+--  opposing team — used for Rivals and Ghosted calculations.
+CREATE TABLE IF NOT EXISTS player_game_history (
+  id                   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  player_id            BIGINT   NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  win                  BOOLEAN  NOT NULL DEFAULT FALSE,
+  points               INTEGER  NOT NULL DEFAULT 0,
+  score_for            INTEGER  NOT NULL DEFAULT 0,
+  score_against        INTEGER  NOT NULL DEFAULT 0,
+  team_label           TEXT     NOT NULL DEFAULT '',
+  opponent_label       TEXT     NOT NULL DEFAULT '',
+  opponent_player_ids  BIGINT[] NOT NULL DEFAULT '{}',
+  teammate_player_ids  BIGINT[] NOT NULL DEFAULT '{}',
+  played_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- ── 7. RPC: increment_player_stats ───────────────────────────
+--  Atomically increments wins, losses and total_points for a
+--  player to avoid read-then-write race conditions when
+--  multiple players finish a game at the same time.
+CREATE OR REPLACE FUNCTION increment_player_stats(
+  p_id      BIGINT,
+  p_points  INTEGER,
+  p_wins    INTEGER,
+  p_losses  INTEGER
 )
-returns void
-language sql
-security definer
-as $$
-  update players
-  set
+RETURNS VOID
+LANGUAGE sql
+AS $$
+  UPDATE players
+  SET
     total_points = total_points + p_points,
     wins         = wins         + p_wins,
     losses       = losses       + p_losses
-  where id = p_id;
+  WHERE id = p_id;
 $$;
 
--- Courts
-create table if not exists courts (
-  id bigint primary key generated always as identity,
-  name text not null,
-  max_players int default 4,
-  created_at timestamptz default now()
-);
 
--- Who is on which court right now
-create table if not exists court_players (
-  court_id bigint references courts(id) on delete cascade,
-  player_id bigint references players(id) on delete cascade,
-  joined_at timestamptz default now(),
-  primary key (court_id, player_id)
-);
+-- ── 8. Realtime ───────────────────────────────────────────────
+--  Enable Postgres realtime replication for live multi-device
+--  sync. Run each line separately if needed.
+ALTER PUBLICATION supabase_realtime ADD TABLE players;
+ALTER PUBLICATION supabase_realtime ADD TABLE courts;
+ALTER PUBLICATION supabase_realtime ADD TABLE court_players;
+ALTER PUBLICATION supabase_realtime ADD TABLE waiting_list;
+ALTER PUBLICATION supabase_realtime ADD TABLE score_history;
+ALTER PUBLICATION supabase_realtime ADD TABLE player_game_history;
 
--- Waiting list
-create table if not exists waiting_list (
-  id bigint primary key generated always as identity,
-  player_id bigint references players(id) on delete cascade,
-  joined_at timestamptz default now()
-);
 
--- Per-court score history
-create table if not exists score_history (
-  id bigint primary key generated always as identity,
-  court_id bigint references courts(id) on delete cascade,
-  team1_label text,
-  team2_label text,
-  score1 int,
-  score2 int,
-  recorded_at timestamptz default now()
-);
+-- ── 9. Row Level Security ─────────────────────────────────────
+--  The app uses the anon key so RLS must allow public access.
+--  Only enable this if you are NOT adding auth later.
+ALTER TABLE players            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE courts             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE court_players      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE waiting_list       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE score_history      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_game_history ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "public access" ON players             FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public access" ON courts              FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public access" ON court_players       FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public access" ON waiting_list        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public access" ON score_history       FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "public access" ON player_game_history FOR ALL USING (true) WITH CHECK (true);
+
 
 -- ============================================================
--- Row Level Security — open policies (tighten with auth later)
+--  UPGRADING AN EXISTING DATABASE?
+--  Run only the statements below if your tables already exist.
 -- ============================================================
-alter table players        enable row level security;
-alter table courts         enable row level security;
-alter table court_players  enable row level security;
-alter table waiting_list   enable row level security;
-alter table score_history  enable row level security;
 
-create policy "public access" on players        for all using (true) with check (true);
-create policy "public access" on courts         for all using (true) with check (true);
-create policy "public access" on court_players  for all using (true) with check (true);
-create policy "public access" on waiting_list   for all using (true) with check (true);
-create policy "public access" on score_history  for all using (true) with check (true);
+-- Add opponent_player_ids if missing (needed for Rivals/Ghosted)
+-- ALTER TABLE player_game_history
+--   ADD COLUMN IF NOT EXISTS opponent_player_ids BIGINT[] NOT NULL DEFAULT '{}';
 
--- ============================================================
--- Seed data (delete if not needed)
--- ============================================================
-insert into courts (name, max_players) values
-  ('Court 1', 4),
-  ('Court 2', 4),
-  ('Court 3', 4);
+-- Add teammate_player_ids if missing (needed for Partners)
+-- ALTER TABLE player_game_history
+--   ADD COLUMN IF NOT EXISTS teammate_player_ids BIGINT[] NOT NULL DEFAULT '{}';
+
+-- Add photo_url if missing
+-- ALTER TABLE players
+--   ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- Add is_deleted soft-delete flag if missing
+-- ALTER TABLE players
+--   ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
