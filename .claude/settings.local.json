@@ -4,7 +4,21 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(where python:*)",
       "Bash(where node:*)",
-      "Bash(where.exe node:*)"
+      "Bash(where.exe node:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\HowardM\\\\Documents\\\\code\\\\stneotsclubnight\\\\split.ps1\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"Get-Content ''C:\\\\Users\\\\HowardM\\\\Documents\\\\code\\\\stneotsclubnight\\\\index_new.html'' | Select-Object -First 20\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"Get-Content ''C:\\\\Users\\\\HowardM\\\\Documents\\\\code\\\\stneotsclubnight\\\\index_new.html'' | Select-Object -Last 20\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"Select-String -Path ''C:\\\\Users\\\\HowardM\\\\Documents\\\\code\\\\stneotsclubnight\\\\index_new.html'' -Pattern ''tab|section-title|Courts|Players|History|Waiting|Live|Members'' | Select-Object -First 20 | Format-List\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\HowardM\\\\Documents\\\\code\\\\stneotsclubnight\\\\check.ps1\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object -ExpandProperty OwningProcess\")",
+      "Bash(powershell -Command \"Stop-Process -Id \\(Get-NetTCPConnection -LocalPort 3000 -State Listen\\).OwningProcess -Force -ErrorAction SilentlyContinue; Write-Host ''killed''\")",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -State Listen 2>nul | Select-Object OwningProcess\")",
+      "Bash(powershell -Command \":*)",
+      "Bash(powershell -Command \"Get-Command pwsh -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(powershell -Command \"Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {$_Id -ne $PID} | Stop-Process -Force; Write-Host ''done''\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\\\Users\\\\HowardM\\\\Documents\\\\code\\\\stneotsclubnight\\\\killserver.ps1\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/)"
     ]
   }
 }

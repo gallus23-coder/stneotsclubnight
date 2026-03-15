@@ -296,16 +296,16 @@
   }
 
   .leave-btn {
-    background: none;
-    border: 1px solid var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
     color: var(--muted);
-    padding: 5px 10px;
-    border-radius: 6px;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    font-size: 1.1rem;
     cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 600;
-    transition: all 0.15s;
-    white-space: nowrap;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
   }
   .leave-btn:hover { border-color: var(--red); color: var(--red); background: rgba(231,76,60,0.08); }
 
@@ -325,11 +325,16 @@
   .court-select:focus { border-color: var(--accent); }
 
   .promote-btn {
-    background: none; border: 1px solid var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
     color: var(--accent);
-    padding: 5px 12px; border-radius: 6px;
-    cursor: pointer; font-size: 0.75rem; font-weight: 600;
-    transition: all 0.15s;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
   }
   .promote-btn:hover { background: var(--accent); color: #0a0e1a; }
 
@@ -805,6 +810,13 @@
     height: 180px;
   }
 
+  .section-blurb {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+    margin-top: -4px;
+  }
+
   .rivals-list {
     display: flex;
     flex-direction: column;
@@ -889,7 +901,13 @@
     </div>
     <div class="courts-grid" id="courts-grid"></div>
     <div class="waiting-section">
-      <div class="section-title">⏳ Waiting List</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="section-title" style="margin-bottom:0">⏳ Waiting List</div>
+        <div style="display:flex;gap:8px">
+          <button class="add-court-btn" onclick="openModal('add-to-waitlist')" title="Add players to waiting list">＋</button>
+          <button class="add-court-btn" style="border-color:#e74c3c;color:#e74c3c" onclick="confirmClearWaitlist()" title="Clear waiting list">🗑</button>
+        </div>
+      </div>
       <div class="waiting-list" id="waiting-list"></div>
     </div>
   </div>
@@ -909,7 +927,6 @@
   </div>
 </div>
 
-<button class="add-player-fab" onclick="fabAction()" title="Add">＋</button>
 
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
   <div class="modal" id="modal-content"></div>
@@ -1143,8 +1160,7 @@ function renderWaitingList() {
         <div class="player-name">${p.name}</div>
       </div>
       <span class="wait-time ${urgent?'urgent':''}">${formatWaitTime(entry.joinedAt)}</span>
-      <button class="promote-btn" onclick="openAssignCourt(${entry.pid})">Assign</button>
-      <button class="leave-btn" onclick="removeWaiting(${entry.pid})">Leave Queue</button>
+      <button class="leave-btn" onclick="removeWaiting(${entry.pid})" title="Remove from queue">－</button>
     </div>`;
   }).join('');
 }
@@ -1508,7 +1524,10 @@ function openModal(mode, data={}) {
       <div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">Cancel</button><button class="btn-primary" onclick="savePlayerName(${p.id})">Save</button></div>`;
   } else if (mode === 'join-court') {
     const court = state.courts.find(c=>c.id===data.courtId);
-    const available = state.waitingList.map(e=>state.players.find(p=>p.id===e.pid)).filter(Boolean).filter(p=>!court.playerIds.includes(p.id));
+    // Sort waiting list by joinedAt ascending (longest wait first), then map to players
+    const availableEntries = [...state.waitingList]
+      .sort((a, b) => a.joinedAt - b.joinedAt)
+      .filter(e => !court.playerIds.includes(e.pid));
     const slotsOpen = court.maxPlayers - court.playerIds.length;
     modal.innerHTML = `
       <div class="modal-title">Join ${court.name}</div>
@@ -1521,8 +1540,17 @@ function openModal(mode, data={}) {
       <div class="form-group">
         <label class="form-label">Waiting List</label>
         <div class="multi-select-list" id="inp-players">
-          ${available.length
-            ? available.map(p=>`<div class="team-select-item" onclick="cycleTeam(${p.id})"><span class="team-badge" id="tbadge-${p.id}" data-team="0">—</span><span>${p.name}</span></div>`).join('')
+          ${availableEntries.length
+            ? availableEntries.map((e, i) => {
+                const p = getPlayer(e.pid);
+                if (!p) return '';
+                const isLongest = i < 4;
+                return `<div class="team-select-item" onclick="cycleTeam(${p.id})">
+                  <span class="team-badge" id="tbadge-${p.id}" data-team="0">—</span>
+                  <span style="flex:1">${p.name}</span>
+                  <span class="wait-time${isLongest ? ' urgent' : ''}" style="font-size:0.72rem;margin-left:6px">${formatWaitTime(e.joinedAt)}</span>
+                </div>`;
+              }).join('')
             : '<div style="color:var(--muted);font-size:0.85rem;padding:8px 0">No players in the waiting list</div>'}
         </div>
       </div>
@@ -1763,6 +1791,27 @@ async function removeCourt(courtId) {
   await db.from('courts').delete().eq('id', courtId);
 }
 
+function confirmClearWaitlist() {
+  if (!state.waitingList.length) { showToast('Waiting list is already empty'); return; }
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <div class="modal-title">🗑 Clear Waiting List?</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">This will remove all ${state.waitingList.length} player${state.waitingList.length > 1 ? 's' : ''} from the queue.</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-danger" onclick="clearWaitlist()">Clear All</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function clearWaitlist() {
+  closeModal();
+  state.waitingList = [];
+  renderCourts();
+  showToast('Waiting list cleared');
+  await db.from('waiting_list').delete().neq('id', 0);
+}
+
 function fabAction() {
   const onCourts = document.getElementById('tab-courts').classList.contains('active');
   if (onCourts) openModal('add-to-waitlist');
@@ -1839,11 +1888,11 @@ async function openPlayerHistory(pid) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 3);
 
-  // Ghosted: 3 players (excl. self) with the fewest games played against this player
+  // Ghosted: 3 players teamed up with the least (opposite of Partners)
   const ghosted = state.players
     .filter(op => op.id !== pid)
-    .map(op => ({ player: op, faced: opponentStats[op.id]?.faced || 0 }))
-    .sort((a, b) => a.faced - b.faced)
+    .map(op => ({ player: op, count: teammateStats[op.id] || 0 }))
+    .sort((a, b) => a.count - b.count)
     .slice(0, 3);
 
   function renderPartnersSection() {
@@ -1872,14 +1921,14 @@ async function openPlayerHistory(pid) {
       </div>`).join('');
   }
 
-    function renderAvoidedSection() {
+  function renderAvoidedSection() {
     if (!ghosted.length) return `<div class="chart-empty">No other players at the club yet</div>`;
-    return ghosted.map(({ player: op, faced }) => `
+    return ghosted.map(({ player: op, count }) => `
       <div class="rival-row">
         ${renderAvatar(op, 32)}
         <div class="rival-info">
           <div class="rival-name">${op.name}</div>
-          <div class="rival-meta">${faced === 0 ? 'Never faced as opponent' : `Faced ${faced} time${faced > 1 ? 's' : ''} as opponent`}</div>
+          <div class="rival-meta">${count === 0 ? 'Never teamed up' : `Teamed up ${count} time${count > 1 ? 's' : ''}`}</div>
         </div>
         <div class="rival-badge">👻</div>
       </div>`).join('');
@@ -1938,14 +1987,17 @@ async function openPlayerHistory(pid) {
     </div>
     <div class="chart-card">
       <div class="chart-title">🤝 Partners</div>
+      <div class="section-blurb">The 3 players you've been on the same team with the most</div>
       <div class="rivals-list">${renderPartnersSection()}</div>
     </div>
     <div class="chart-card">
       <div class="chart-title">😤 Rivals</div>
+      <div class="section-blurb">The 3 players you've beaten the fewest times</div>
       <div class="rivals-list">${renderRivalsSection()}</div>
     </div>
     <div class="chart-card">
       <div class="chart-title">👻 Ghosted</div>
+      <div class="section-blurb">The 3 players you've teamed up with the least</div>
       <div class="rivals-list">${renderAvoidedSection()}</div>
     </div>
     <button class="join-btn" style="width:100%;margin-top:8px" onclick="openHistoryModal()">📋 Complete History</button>
